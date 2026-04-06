@@ -165,9 +165,17 @@ func (m *ECHManager) parseDNSResponse(response []byte) (string, error) {
 	}
 	offset := 12
 	for offset < len(response) && response[offset] != 0 {
+		// Handle DNS compression pointer (top 2 bits set)
+		if response[offset]&0xC0 == 0xC0 {
+			offset += 2
+			break
+		}
 		offset += int(response[offset]) + 1
 	}
-	offset += 5
+	if offset < len(response) && response[offset] == 0 {
+		offset++ // skip null terminator
+	}
+	offset += 4 // skip QTYPE (2) + QCLASS (2)
 
 	for i := 0; i < int(ancount); i++ {
 		if offset >= len(response) {

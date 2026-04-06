@@ -1,5 +1,6 @@
+// Deploy template — set ECH_TOKEN via Cloudflare Worker env secret before deploying.
 import { connect } from 'cloudflare:sockets';
-const TOKEN = 'xxx';
+const TOKEN = globalThis.ECH_TOKEN || 'CHANGE_ME';
 const encoder = new TextEncoder();
 
 export default {

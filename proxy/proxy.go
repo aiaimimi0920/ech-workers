@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -370,16 +371,20 @@ func (s *ProxyServer) handleTunnel(conn net.Conn, target, clientAddr string, mod
 		s.bufPool.Put(buffer)
 	}
 
-	var connectMsg []byte
+	// Base64-encode firstFrame to avoid delimiter conflicts with pipe '|'
+	encodedFrame := ""
+	if len(firstFrame) > 0 {
+		encodedFrame = base64.StdEncoding.EncodeToString(firstFrame)
+	}
+	var connectMsg string
 	if s.proxyIP != "" {
-		connectMsg = append([]byte(fmt.Sprintf("CONNECT:%s|", target)), firstFrame...)
-		connectMsg = append(connectMsg, []byte(fmt.Sprintf("|%s", s.proxyIP))...)
+		connectMsg = fmt.Sprintf("CONNECT:%s|%s|%s", target, encodedFrame, s.proxyIP)
 	} else {
-		connectMsg = append([]byte(fmt.Sprintf("CONNECT:%s|", target)), firstFrame...)
+		connectMsg = fmt.Sprintf("CONNECT:%s|%s", target, encodedFrame)
 	}
 
 	mu.Lock()
-	err = wsConn.WriteMessage(websocket.TextMessage, connectMsg)
+	err = wsConn.WriteMessage(websocket.TextMessage, []byte(connectMsg))
 	mu.Unlock()
 	if err != nil {
 		s.sendErrorResponse(conn, mode)
