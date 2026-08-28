@@ -20,6 +20,9 @@ func (c *Config) Validate() error {
 	if c.ServerAddr == "" {
 		return errors.New("必须指定服务端地址 (-f)")
 	}
+	if strings.TrimSpace(c.Token) == "" {
+		return errors.New("必须通过 -token 或 ECH_TOKEN 指定身份验证令牌")
+	}
 
 	if _, _, err := net.SplitHostPort(c.ListenAddr); err != nil {
 		if !strings.Contains(err.Error(), "missing port") {

@@ -3,6 +3,8 @@ package main
 import (
 	"flag"
 	"log"
+	"os"
+	"strings"
 
 	"ech-workers/config"
 	"ech-workers/ech"
@@ -22,6 +24,10 @@ func main() {
 	flag.StringVar(&cfg.ProxyIP, "pyip", "", "代理服务器IP（用于Worker连接回退，proxyip）")
 
 	flag.Parse()
+	cfg.Token = strings.TrimSpace(cfg.Token)
+	if cfg.Token == "" {
+		cfg.Token = strings.TrimSpace(os.Getenv("ECH_TOKEN"))
+	}
 
 	if err := cfg.Validate(); err != nil {
 		log.Fatalf("配置错误: %v", err)
