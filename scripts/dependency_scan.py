@@ -141,12 +141,11 @@ class BinaryRunner:
     def execute(self, binary: str, arguments: list[str], *, offline: bool = False) -> int:
         require(binary in {"osv-scanner", "osv-reporter"}, "invalid_tool")
         name = "osv-gate-" + uuid.uuid4().hex
-        command = ["docker", "run", "--rm", "--name", name, "--read-only",
-                   "--user", f"{os.getuid()}:{os.getgid()}",
+        command = ["docker", "run", "--name", name, "--read-only",
                    "--cap-drop=ALL", "--memory=1g", "--cpus=2",
                    "--tmpfs", "/tmp:rw,nosuid,noexec,size=128m",
                    "--mount", f"type=bind,source={self.root},target=/repo,readonly",
-                   "--mount", f"type=bind,source={self.evidence},target=/evidence",
+                   "--mount", f"type=bind,source={self.evidence},target=/evidence,readonly",
                    "--workdir", "/repo", "--entrypoint", "/root/" + binary]
         if offline:
             command.extend(["--network", "none"])
@@ -158,6 +157,14 @@ class BinaryRunner:
                 result = subprocess.run(command, stdin=subprocess.DEVNULL,
                                         stdout=stream, stderr=stream, timeout=600,
                                         check=False)
+            if result.returncode in {0, 1}:
+                output_name = "results.json" if binary == "osv-scanner" else "results.sarif"
+                copy = subprocess.run(["docker", "cp", name + ":/tmp/" + output_name,
+                                       str(self.evidence / output_name)],
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                      timeout=30, check=False)
+                if "--version" not in arguments:
+                    require(copy.returncode == 0, "missing_tool_output")
             if result.returncode not in {0, 1}:
                 diagnostic = log.read_bytes()[:4096].lower()
                 categories = [label for label, marker in [
@@ -189,7 +196,7 @@ class BinaryRunner:
 
 def scan(runner: BinaryRunner, lockfile: str, extra: list[str] | None = None) -> int:
     arguments = ["scan", "--all-packages", "--format=json",
-                 "--output-file=/evidence/results.json", "--lockfile=/repo/" + lockfile]
+                 "--output-file=/tmp/results.json", "--lockfile=/repo/" + lockfile]
     if lockfile == "go.mod":
         arguments.append("--no-call-analysis=go")
     arguments.extend(extra or [])
@@ -198,7 +205,7 @@ def scan(runner: BinaryRunner, lockfile: str, extra: list[str] | None = None) ->
 
 def report(runner: BinaryRunner, new: str = "/evidence/results.json") -> int:
     return runner.execute("osv-reporter", ["--new=" + new, "--fail-on-vuln=true",
-                          "--output-files=sarif:/evidence/results.sarif"], offline=True)
+                          "--output-files=sarif:/tmp/results.sarif"], offline=True)
 
 
 def complete_scan(runner: BinaryRunner, scanner_exit: int, lockfile: str) -> dict:
