@@ -141,20 +141,26 @@ class BinaryRunner:
     def execute(self, binary: str, arguments: list[str], *, offline: bool = False) -> int:
         require(binary in {"osv-scanner", "osv-reporter"}, "invalid_tool")
         name = "osv-gate-" + uuid.uuid4().hex
-        command = ["docker", "run", "--name", name, "--read-only",
+        command = ["docker", "run", "--detach", "--name", name, "--read-only",
                    "--cap-drop=ALL", "--memory=1g", "--cpus=2",
                    "--tmpfs", "/tmp:rw,nosuid,noexec,size=128m",
+                   "--env", "XDG_CACHE_HOME=/tmp/cache",
                    "--mount", f"type=bind,source={self.root},target=/repo,readonly",
                    "--mount", f"type=bind,source={self.evidence},target=/evidence,readonly",
-                   "--workdir", "/repo", "--entrypoint", "/root/" + binary]
+                   "--workdir", "/repo", "--entrypoint", "/bin/sh"]
         if offline:
             command.extend(["--network", "none"])
-        command.extend([IMAGE, *arguments])
+        command.extend([IMAGE, "-c", "while :; do sleep 30; done"])
         self.counter += 1
         log = self.evidence / f"tool-{self.counter}.log"
         try:
             with log.open("wb") as stream:
-                result = subprocess.run(command, stdin=subprocess.DEVNULL,
+                started = subprocess.run(command, stdin=subprocess.DEVNULL,
+                                         stdout=subprocess.DEVNULL, stderr=stream,
+                                         timeout=60, check=False)
+                require(started.returncode == 0, "container_start_failed")
+                result = subprocess.run(["docker", "exec", name, "/root/" + binary,
+                                         *arguments], stdin=subprocess.DEVNULL,
                                         stdout=stream, stderr=stream, timeout=600,
                                         check=False)
             if result.returncode in {0, 1}:
