@@ -117,6 +117,7 @@ test("dependency gate validates actual exits and artifacts before upload", () =>
     "node --test scripts/tests/codeql-summary.test.mjs scripts/tests/security-inputs.test.mjs",
   ]) assert.ok(workflow.includes(text), `missing ${text}`);
   assert.ok(/python3 scripts\/dependency_scan\.py (?:gomod|npm)/.test(workflow));
+  assert.ok(workflow.includes(" --advisory"));
   const driver = fs.readFileSync(new URL("../dependency_scan.py", import.meta.url), "utf8");
   for (const required of ["--lockfile=/github/workspace/", "--all-packages", "--fail-on-vuln=true"])
     assert.ok(driver.includes(required), `missing ${required}`);
