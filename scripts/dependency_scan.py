@@ -163,14 +163,13 @@ class BinaryRunner:
                                          *arguments], stdin=subprocess.DEVNULL,
                                         stdout=stream, stderr=stream, timeout=600,
                                         check=False)
-            if result.returncode in {0, 1}:
+            if result.returncode in {0, 1} and "--version" not in arguments:
                 output_name = "results.json" if binary == "osv-scanner" else "results.sarif"
-                copy = subprocess.run(["docker", "cp", name + ":/tmp/" + output_name,
-                                       str(self.evidence / output_name)],
-                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                      timeout=30, check=False)
-                if "--version" not in arguments:
-                    require(copy.returncode == 0, "missing_tool_output")
+                with (self.evidence / output_name).open("wb") as artifact:
+                    copy = subprocess.run(["docker", "exec", name, "cat", "/tmp/" + output_name],
+                                          stdout=artifact, stderr=subprocess.DEVNULL,
+                                          timeout=30, check=False)
+                require(copy.returncode == 0, "missing_tool_output")
             if result.returncode not in {0, 1}:
                 diagnostic = log.read_bytes()[:4096].lower()
                 categories = [label for label, marker in [
@@ -181,7 +180,11 @@ class BinaryRunner:
                     ("no_packages", b"no packages")
                 ] if marker in diagnostic]
                 print(json.dumps({"tool": binary, "exit": result.returncode,
-                                  "error_categories": categories}))
+                                  "error_categories": categories,
+                                  "readonly_targets": [
+                                          target.decode("utf-8", "replace") for target in re.findall(
+                                              rb"(?:open|mkdir|stat) (/[^:\n]{1,160}): read-only file system",
+                                              diagnostic)]}))
             return result.returncode
         except (OSError, subprocess.SubprocessError):
             raise ScanError("tool_execution_failed") from None
