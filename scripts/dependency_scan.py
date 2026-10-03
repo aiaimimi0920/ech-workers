@@ -142,6 +142,7 @@ class BinaryRunner:
         require(binary in {"osv-scanner", "osv-reporter"}, "invalid_tool")
         name = "osv-gate-" + uuid.uuid4().hex
         command = ["docker", "run", "--rm", "--name", name, "--read-only",
+                   "--user", f"{os.getuid()}:{os.getgid()}",
                    "--cap-drop=ALL", "--memory=1g", "--cpus=2",
                    "--tmpfs", "/tmp:rw,nosuid,noexec,size=128m",
                    "--mount", f"type=bind,source={self.root},target=/repo,readonly",
@@ -157,6 +158,17 @@ class BinaryRunner:
                 result = subprocess.run(command, stdin=subprocess.DEVNULL,
                                         stdout=stream, stderr=stream, timeout=600,
                                         check=False)
+            if result.returncode not in {0, 1}:
+                diagnostic = log.read_bytes()[:4096].lower()
+                categories = [label for label, marker in [
+                    ("permission_denied", b"permission denied"),
+                    ("read_only_filesystem", b"read-only file system"),
+                    ("invalid_argument", b"flag provided but not defined"),
+                    ("missing_input", b"no such file"),
+                    ("no_packages", b"no packages")
+                ] if marker in diagnostic]
+                print(json.dumps({"tool": binary, "exit": result.returncode,
+                                  "error_categories": categories}))
             return result.returncode
         except (OSError, subprocess.SubprocessError):
             raise ScanError("tool_execution_failed") from None
