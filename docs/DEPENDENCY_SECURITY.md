@@ -15,6 +15,14 @@ It executes OSV scanner and reporter 2.5.1 directly from the immutable image
 `ghcr.io/google/osv-scanner-action@sha256:dcd947131d8d11b8d0964de6590661fb921a4ecbd7b90a7cb21083acfc3fd8cc`.
 The scanner explicitly reads committed root `go.mod`, after validating
 `go.mod` and `go.sum`. `--no-call-analysis=go` leaves Go builds to CodeQL.
+OSV 2.5.1's Go extractor counts both the declared module and a stdlib inferred
+from go.mod's minimum Go version. Its default filter then removes that inferred
+stdlib before advisory matching. The previous wrapper log count (2 extracted)
+and current JSON count (1 inventoried gorilla/websocket 1.5.3) have different
+semantics, not new deduplication. CI reports both counts and exact module IDs.
+This does not establish advisory coverage of the actual build toolchain. See
+[the pinned filter](https://github.com/google/osv-scanner/blob/v2.5.1/pkg/osvscanner/osvscanner.go)
+and [the pinned extractor](https://github.com/google/osv-scalibr/blob/23fa66ca68dd/extractor/filesystem/language/golang/gomod/gomod.go).
 Containers run only in hosted Linux CI with no credentials, a read-only project
 mount and filesystem, dropped capabilities, and bounded time/resources.
 
@@ -33,9 +41,14 @@ reproduce and reject those cases, abnormal scanner/reporter exits, zero inputs,
 and empty inventory, alongside healthy and known-vulnerability cases.
 The advisory fixture is GO-2021-0053 from OSV-Scanner's v2.5.1 test data; it is
 not a production exception. These binary tests are skipped outside hosted Linux.
-The shared npm validator also uses native offline lock-only npm resolution for
-direct dependencies, including alias, link, and optional dependency semantics.
-It does not install packages or validate every transitive subtree.
+The shared npm validator uses the existing npm's bundled Arborist to load the
+virtual lock graph offline, without installs or lifecycle scripts. It follows all
+applicable mandatory, peer, alias and linked resolutions, rejects missing or
+incompatible transitive entries and missing link targets, and uses npm's platform
+rules. Missing optional/optional-peer edges are allowed. Inapplicable optional
+OS/CPU/libc subtrees are skipped, while applicable optional packages must still
+have complete mandatory dependencies. This platform-specific graph check does
+not remove any packages or vulnerabilities from OSV's full lock scan.
 
 CodeQL scans Go, JavaScript/TypeScript and GitHub Actions with security-extended
 queries and full-branch analysis. Go runs tests and builds manually; JavaScript
@@ -45,8 +58,10 @@ Checkout disables persisted credentials. Permissions are contents:read, plus
 actions:read and security-events:write for upload jobs.
 
 The summary separates finding metadata from diagnostic errors and failed
-invocations. Analysis success does not assert zero findings or impose a severity
-gate. Findings remain visible for review. Missing/invalid SARIF or upload errors
+invocations. After analysis uploads the complete SARIF, the repository enforces a finding
+gate: security severity >=7 or standard SARIF error level exits 1. Diagnostic or
+inventory failures exit 2 and stay distinct. All findings and counts remain
+visible; the gate counts even findings beyond the bounded summary output cap. Missing/invalid SARIF or upload errors
 fail their job. Summary counts are SARIF results, not deduplicated native alerts;
 source snippets, messages, and flows are omitted.
 
@@ -63,6 +78,7 @@ maintenance, deployment, publishing, signing, or secrets.
 
 Repository files establish CI entrypoints, not native security settings.
 Dependabot alerts, dependency graph, automatic security updates, secret scanning,
-and protection settings were not changed. Native status is unverified: the
-connector workflow-list endpoint was unavailable and no existing gh executable
-was found in the local session.
+and protection settings were not changed. Native status has not been independently verified by this task. The local
+severity/error gate does not depend on reading native thresholds; enabling native
+switches alone does not prove equivalent protection. SARIF uploads succeeded in
+real CI, but upload-failure fault injection has not been executed.
