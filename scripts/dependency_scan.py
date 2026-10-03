@@ -66,7 +66,7 @@ def inventory(path: Path, scanner_exit: int, lockfile: str) -> dict:
         require(isinstance(source, dict), "invalid_package_inventory")
         location = source.get("source")
         require(isinstance(location, dict) and location.get("type") == "lockfile"
-                and location.get("path") == "/repo/" + lockfile,
+                and location.get("path") == "/github/workspace/" + lockfile,
                 "unexpected_scanned_input")
         packages = source.get("packages")
         require(isinstance(packages, list) and bool(packages), "missing_package_inventory")
@@ -145,9 +145,9 @@ class BinaryRunner:
                    "--cap-drop=ALL", "--memory=1g", "--cpus=2",
                    "--tmpfs", "/tmp:rw,nosuid,noexec,size=128m",
                    "--env", "XDG_CACHE_HOME=/tmp/cache",
-                   "--mount", f"type=bind,source={self.root},target=/repo,readonly",
+                   "--mount", f"type=bind,source={self.root},target=/github/workspace,readonly",
                    "--mount", f"type=bind,source={self.evidence},target=/evidence,readonly",
-                   "--workdir", "/repo", "--entrypoint", "/bin/sh"]
+                   "--workdir", "/github/workspace", "--entrypoint", "/bin/sh"]
         if offline:
             command.extend(["--network", "none"])
         command.extend([IMAGE, "-c", "while :; do sleep 30; done"])
@@ -180,11 +180,7 @@ class BinaryRunner:
                     ("no_packages", b"no packages")
                 ] if marker in diagnostic]
                 print(json.dumps({"tool": binary, "exit": result.returncode,
-                                  "error_categories": categories,
-                                  "readonly_targets": [
-                                          target.decode("utf-8", "replace") for target in re.findall(
-                                              rb"(?:open|mkdir|stat) (/[^:\n]{1,160}): read-only file system",
-                                              diagnostic)]}))
+                                  "error_categories": categories}))
             return result.returncode
         except (OSError, subprocess.SubprocessError):
             raise ScanError("tool_execution_failed") from None
@@ -205,7 +201,7 @@ class BinaryRunner:
 
 def scan(runner: BinaryRunner, lockfile: str, extra: list[str] | None = None) -> int:
     arguments = ["scan", "--all-packages", "--format=json",
-                 "--output-file=/tmp/results.json", "--lockfile=/repo/" + lockfile]
+                 "--output-file=/tmp/results.json", "--lockfile=/github/workspace/" + lockfile]
     if lockfile == "go.mod":
         arguments.append("--no-call-analysis=go")
     arguments.extend(extra or [])
@@ -217,15 +213,19 @@ def report(runner: BinaryRunner, new: str = "/evidence/results.json") -> int:
                           "--output-files=sarif:/tmp/results.sarif"], offline=True)
 
 
-def complete_scan(runner: BinaryRunner, scanner_exit: int, lockfile: str) -> dict:
-    facts = inventory(runner.evidence / "results.json", scanner_exit, lockfile)
-    reporter_exit = report(runner)
+def validate_report(runner: BinaryRunner, facts: dict, scanner_exit: int,
+                    reporter_exit: int) -> dict:
     require(reporter_exit in {0, 1}, "reporter_execution_failed")
     count = validate_sarif(runner.evidence / "results.sarif", facts["expected_sarif_results"])
     require(reporter_exit == scanner_exit, "reporter_exit_mismatch")
     return {**facts, "sarif_result_count": count, "scanner_exit": scanner_exit,
             "reporter_exit": reporter_exit, "analysis_complete": True,
             "report_valid": True}
+
+
+def complete_scan(runner: BinaryRunner, scanner_exit: int, lockfile: str) -> dict:
+    facts = inventory(runner.evidence / "results.json", scanner_exit, lockfile)
+    return validate_report(runner, facts, scanner_exit, report(runner))
 
 
 def set_upload_output(valid: bool) -> None:

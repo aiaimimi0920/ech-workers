@@ -90,7 +90,7 @@ test("dependency gate validates actual exits and artifacts before upload", () =>
   ]) assert.ok(workflow.includes(text), `missing ${text}`);
   assert.ok(/python3 scripts\/dependency_scan\.py (?:gomod|npm)/.test(workflow));
   const driver = fs.readFileSync(new URL("../dependency_scan.py", import.meta.url), "utf8");
-  for (const required of ["--lockfile=/repo/", "--all-packages", "--fail-on-vuln=true"])
+  for (const required of ["--lockfile=/github/workspace/", "--all-packages", "--fail-on-vuln=true"])
     assert.ok(driver.includes(required), `missing ${required}`);
   for (const forbidden of ["ignore-unfixed", "--config", "continue-on-error", "secrets: inherit",
     "pull_request_target", "workflow_call:", "contents: write", "osv-scanner-reusable.yml"]) {

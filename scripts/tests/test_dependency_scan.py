@@ -9,7 +9,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dependency_scan import (BinaryRunner, ScanError, complete_scan, inventory,
-                             read_json, report, scan, validate_sarif)
+                             report, scan, validate_report, validate_sarif)
 
 
 class RealBinaryTests(unittest.TestCase):
@@ -29,7 +29,7 @@ class RealBinaryTests(unittest.TestCase):
         self.out = parent / "output"
         self.runner = BinaryRunner(self.root, self.out)
         # This tiny offline DB is fixed test data, never a production exception.
-        for suffix in ["Go/all.zip", "osv-scanner/Go/all.zip", "osv-scalibr/Go/all.zip"]:
+        for suffix in ["osv-scalibr/Go/all.zip"]:
             archive = self.out / "db" / suffix
             archive.parent.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(archive, "w") as stream:
@@ -100,17 +100,19 @@ class RealBinaryTests(unittest.TestCase):
         self.assertEqual(self.fixture(), 0)
         facts = inventory(self.out / "results.json", 0, "go.mod")
         status = self.runner.execute("osv-reporter", ["--new=/evidence/results.json",
-                                     "--output-files=unsupported:/evidence/results.sarif",
+                                     "--output-files=unsupported:/tmp/results.sarif",
                                      "--fail-on-vuln=true"], offline=True)
         self.assertNotIn(status, {0, 1})
         self.assertGreater(facts["package_count"], 0)
+        with self.assertRaisesRegex(ScanError, "reporter_execution_failed"):
+            validate_report(self.runner, facts, 0, status)
 
     def test_reporter_zero_cannot_replace_known_vulnerability_results(self):
         self.assertEqual(self.fixture("1.3.1"), 1)
         facts = inventory(self.out / "results.json", 1, "go.mod")
         self.assertEqual(report(self.runner, "/evidence/missing.json"), 0)
         with self.assertRaisesRegex(ScanError, "reporter_result_mismatch"):
-            validate_sarif(self.out / "results.sarif", facts["expected_sarif_results"])
+            validate_report(self.runner, facts, 1, 0)
 
 
 if __name__ == "__main__":
