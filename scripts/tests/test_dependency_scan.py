@@ -29,7 +29,7 @@ class RealBinaryTests(unittest.TestCase):
         self.out = parent / "output"
         self.runner = BinaryRunner(self.root, self.out)
         # This tiny offline DB is fixed test data, never a production exception.
-        for suffix in ["Go/all.zip", "osv-scanner/Go/all.zip"]:
+        for suffix in ["Go/all.zip", "osv-scanner/Go/all.zip", "osv-scalibr/Go/all.zip"]:
             archive = self.out / "db" / suffix
             archive.parent.mkdir(parents=True, exist_ok=True)
             with zipfile.ZipFile(archive, "w") as stream:
